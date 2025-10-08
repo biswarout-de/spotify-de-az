@@ -6,3 +6,5 @@ azure-functions
 spotipy
 datetime
 azure-storage-blob
+pandas
+azure-storage-queue
