@@ -9,36 +9,50 @@ from azure.storage.blob import BlobServiceClient
 
 app = func.FunctionApp()
 
-@app.timer_trigger(schedule="0 30 20 * * *", arg_name="myTimer", run_on_startup=False,
-              use_monitor=False) 
+@app.timer_trigger(schedule="0 * * * * *", arg_name="myTimer", run_on_startup=False, use_monitor=False)
 def spotifyApiDataExtractFunc(myTimer: func.TimerRequest) -> None:
+    logging.info("Spotify ETL Timer Trigger function started...")
 
-        spotify_client_id = os.getenv('spotipy_client_id')
-        spotify_client_secret = os.getenv('spotipy_client_secret')
+    # Spotify credentials
+    spotify_client_id = os.getenv('spotify_client_id')
+    spotify_client_secret = os.getenv('spotify_client_secret')
 
-        client_credential_manager = SpotifyClientCredentials(client_id=spotify_client_id, client_secret=spotify_client_secret)
-        sp = spotipy.Spotify(client_credentials_manager=client_credential_manager)
-        playlist = sp.user_playlist('spotify')
+    if not spotify_client_id or not spotify_client_secret:
+        logging.error("Spotify credentials not found in environment variables.")
+        return
 
-        playlist_link = "https://open.spotify.com/playlist/37i9dQZEVXbMDoHDwVN2tF"
-        playlist_uri = playlist_link.split("/")[-1].split("?")[0]
+    #  Spotify API client setup
+    client_credential_manager = SpotifyClientCredentials(
+        client_id=spotify_client_id,
+        client_secret=spotify_client_secret
+    )
+    sp = spotipy.Spotify(client_credentials_manager=client_credential_manager)
 
-        spotify_data = sp.playlist_tracks(playlist_uri)
-        spotify_json = json.dumps(spotify_data)
+    # Fetch playlist data
+    playlist_link = "https://open.spotify.com/playlist/5ABHKGoOzxkaa28ttQV9sE"
+    playlist_id = playlist_link.split("/")[-1].split("?")[0]
+    playlist_uri = f"spotify:playlist:{playlist_id}"
 
-        file_name = "spotify_raw" + str(datetime.now()) + '.json'
+    spotify_data = sp.playlist_tracks(playlist_uri)
+    spotify_json = json.dumps(spotify_data)
 
-        azure_connection_string = os.getenv("az_connection_string")
-        container_name = "rawdata"
-        blob_name = f"to_processed/{file_name}"
+    logging.info("Spotify data extracted successfully")
 
-        blob_service_client = BlobServiceClient.from_connection_string(azure_connection_string)
-        container_client = blob_service_client.get_container_client(container_name)
-        blob_client = container_client.get_blob_client(blob_name)
+    #Prepare filename and Blob details
+    file_name = f"spotify_raw_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    container_name = "rawdata"
+    blob_name = f"to_processed/{file_name}"
 
-        blob_data = blob_client.download_blob().content_as_text()
+    #Upload to Azure Blob Storage
+    azure_connection_string = os.getenv("az_connection_string")
+    if not azure_connection_string:
+        logging.error("Azure Storage connection string not found in environment variables.")
+        return
 
-        blob_client.upload_blob(spotify_json, overwrite=True)
+    blob_service_client = BlobServiceClient.from_connection_string(azure_connection_string)
+    blob_client = blob_service_client.get_blob_client(container=container_name, blob=blob_name)
 
+    #(Removed unnecessary download before upload)
+    blob_client.upload_blob(spotify_json, overwrite=True)
 
-    
+    logging.info(f"Uploaded to Azure Blob Storage: {container_name}/{blob_name}")
