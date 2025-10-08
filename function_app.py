@@ -9,13 +9,13 @@ from azure.storage.blob import BlobServiceClient
 
 app = func.FunctionApp()
 
-@app.timer_trigger(schedule="0 30 20 * * *", arg_name="myTimer", run_on_startup=False, use_monitor=False)
+@app.timer_trigger(schedule="0 * * * * *", arg_name="myTimer", run_on_startup=False, use_monitor=False)
 def spotifyApiDataExtractFunc(myTimer: func.TimerRequest) -> None:
     logging.info("Spotify ETL Timer Trigger function started...")
 
     # Spotify credentials
-    spotify_client_id = os.getenv('spotipy_client_id')
-    spotify_client_secret = os.getenv('spotipy_client_secret')
+    spotify_client_id = os.getenv('spotify_client_id')
+    spotify_client_secret = os.getenv('spotify_client_secret')
 
     if not spotify_client_id or not spotify_client_secret:
         logging.error("Spotify credentials not found in environment variables.")
@@ -29,8 +29,9 @@ def spotifyApiDataExtractFunc(myTimer: func.TimerRequest) -> None:
     sp = spotipy.Spotify(client_credentials_manager=client_credential_manager)
 
     # Fetch playlist data
-    playlist_link = "https://open.spotify.com/playlist/37i9dQZEVXbMDoHDwVN2tF"
-    playlist_uri = playlist_link.split("/")[-1].split("?")[0]
+    playlist_link = "https://open.spotify.com/playlist/5ABHKGoOzxkaa28ttQV9sE"
+    playlist_id = playlist_link.split("/")[-1].split("?")[0]
+    playlist_uri = f"spotify:playlist:{playlist_id}"
 
     spotify_data = sp.playlist_tracks(playlist_uri)
     spotify_json = json.dumps(spotify_data)
