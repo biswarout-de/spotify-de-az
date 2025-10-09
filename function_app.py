@@ -118,6 +118,21 @@ def upload_dataframes(blob_service_client, df, path, filename):
     blob_client = blob_service_client.get_blob_client(container=container_name, blob=blob_name)
     blob_client.upload_blob(csv_buffer.getvalue(), overwrite=True)
 
+def move_blobs(blob_service_client, container_name):
+    
+        container_client = blob_service_client.get_container_client(container_name)
+
+        for blob in container_client.list_blobs(name_starts_with='to_processed/'):
+            blob_name = blob.name
+            new_blob_name = blob_name.replace('to_processed/','processed/',1)
+            source_blob_client = container_client.get_blob_client(blob_name)
+            dest_blob_client = container_client.get_blob_client(new_blob_name)
+            
+            dest_blob_client.start_copy_from_url(source_blob_client.url)
+            logging.info(f"copied from {blob_name} to {new_blob_name}")
+
+            source_blob_client.delete_blob()
+            logging.info(f"deleted originnal : {blob_name}")
 
 
 @app.blob_trigger(arg_name="myblob", path="rawdata/to_processed/{name}",
@@ -151,48 +166,6 @@ def BlobTriggerSpotifyETLFunc(myblob: func.InputStream):
     upload_dataframes(blob_service_client, artist_df, "artist_data/", f"artist_{timestamp}.csv")
     upload_dataframes(blob_service_client, song_df, "songs_data/", f"songs_{timestamp}.csv")
 
-    queue_client = QueueClient.from_connection_string(conn_str, "movequeue")
-    queue_client.send_message(myblob.name)
-    logging.info(f"Sent message to movequeue for blob: {myblob.name}")
-
-
-
-
-@app.queue_trigger(arg_name="azqueue", queue_name="movequeue",
-                   connection="az_connection_string")
-def moveProcessedFileFunc(azqueue: func.QueueMessage):
-    import os
-    import logging
-    from azure.storage.blob import BlobServiceClient
-
-    try:
-        blob_name = azqueue.get_body().decode("utf-8")
-        logging.info(f"📥 Queue trigger received blob name: {blob_name}")
-
-        conn_str = os.getenv("az_connection_string")
-        if not conn_str:
-            raise Exception("❌ Missing az_connection_string in environment variables")
-
-        blob_service_client = BlobServiceClient.from_connection_string(conn_str)
-        container_name = "rawdata"
-
-        # Extract just the file name
-        file_name = os.path.basename(blob_name)
-        source_blob_client = blob_service_client.get_blob_client(container=container_name, blob=blob_name)
-
-        # Copy to processed folder inside same container
-        processed_path = f"processed/{file_name}"
-        processed_blob_client = blob_service_client.get_blob_client(container=container_name, blob=processed_path)
-
-        logging.info(f"📦 Copying blob → {processed_path}")
-        processed_blob_client.start_copy_from_url(source_blob_client.url)
-
-        # Delete original
-        source_blob_client.delete_blob()
-        logging.info(f"🗑️ Deleted original blob: {blob_name}")
-
-        logging.info(f"✅ Moved blob to: {processed_path}")
-
-    except Exception as e:
-        logging.error(f"❌ Error in moveProcessedFileFunc: {str(e)}")
-        raise e  # rethrow so Azure can retry if necessary
+    move_container_name = 'rawdata'
+    move_blobs(blob_service_client,move_container_name)
+    logging.info("Move Successfull")
